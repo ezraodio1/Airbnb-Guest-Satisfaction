@@ -1,0 +1,282 @@
+---
+title: "Final Project"
+author: "Noah Costa and Ezra Odio"
+format: pdf
+---
+
+```{r data, message=FALSE, warning=FALSE, echo=FALSE}
+library(tidyverse)
+library(tidymodels)
+library(leaps)
+library(MASS)
+library(glmnet)
+library(Stat2Data)
+library(nnet)
+library(ggfortify)
+library(car)
+library(lme4)
+
+airbnb <- read.csv("Aemf1.csv")
+```
+
+#### Introduction
+
+  All across the world, the hospitality industry is essential to many people’s livelihoods. Many
+people first think of hotels when hospitality is brought up, but there is another, fast-growing
+accommodation service that is making waves: Airbnb. As more and more people look to invest in
+creating Airbnb properties for financial gain, it is essential that these property owners
+understand what factors make their guests happy in order to ensure success. This report seeks to
+come up with a model to predict success in terms of guest satisfaction based on a number of
+different factors related to the Airbnb property. 
+
+#### Data and Data Cleaning
+
+  The data is taken from a dataset called “Airbnb Cleaned Europe Dataset” on Kaggle. This dataset
+is a cleaned version of a dataset used by Kristóf Gyódi and Łukasz Nawaro in their research paper titled “Determinants of Airbnb prices in European cities: A spatial econometrics approach.“ The original data was collected by executing search queries on Airbnb’s platform for certain major European cities.
+
+  As the dataset on Kaggle had already been cleaned, not much was necessary in terms of data
+cleaning, as there were no observations which needed to be removed. The one thing we did do was
+create a new variable called “satisfied” that was set to 1 if guest satisfaction was greater than
+90, and 0 otherwise. This threshold of 90 can be changed depending on the preferences/goals of the
+potential owner. 
+
+#### Relevant Variables: 
+
+**Guest Satisfaction:** Overall rating of the listing on scale of 20-100
+
+**City:** City where Airbnb is located 
+
+**Price:** Full price of accommodation for two people for two nights in Euros 
+
+**Room.Type:** The type of the accommodation. Including shared, private or house/apartment 
+
+**Superhost:** Whether the host is a superhost or not. Superhost definition can be found on 
+Airbnb’s website 
+
+**Multiple.Rooms:** Whether the host has 2-4 listings
+
+**Business:** Whether the host has more than 4 listings
+
+**Cleanliness.Rating:** Overall cleanliness rating on scale of 2-10
+
+**Bedrooms:** Number of bedrooms 
+
+**City.Center..km.:** Distance from city center in km 
+
+**Metro.Distance..km.:** Distance from nearest metro station in km 
+
+**Attraction.Index:** Attraction index of the listing (farther from attractions, lower the value)
+
+#### Exploratory Data Analysis
+
+```{r eda1, echo=FALSE}
+ggplot(data = airbnb, 
+       mapping = aes(x = Guest.Satisfaction,
+                     y = City)) +
+  geom_boxplot() +
+  labs(title = "European Cities Have Similar Airbnb Guest Satisfaction Ratings",
+       x = "Guest Satisfaction Rating (0-100)",
+       y = "City")
+```
+Looking at the graph above, we can see that the median Airbnb guest satisfaction
+ratings for the cities in the dataset are all very similar to each other. 
+Additionally, the median Airbnb ratings are all greater than 90.
+
+```{r eda2, echo=FALSE}
+ggplot(data = airbnb, 
+       mapping = aes(x = Guest.Satisfaction,
+                     y = Cleanliness.Rating,
+                     color = Superhost)) +
+  geom_point() +
+  labs(title = "Cleaner The Room, Higher The Rating",
+       subtitle = "Colored By Superhost Status on AirBnb",
+       x = "Guest Satisfaction Rating (0-100)",
+       y = "Cleanliness Rating",
+       color = "Superhost Status")
+```
+
+Looking at this graph, we can see that higher cleanliness ratings seem to 
+correlate with higher guest satisfaction ratings. Additionally, we can also
+see that Airbnb listings posted by superhosts tend to have higher cleanliness
+ratings and guest satisfaction ratings.
+
+#### Methodology
+
+  The first step we took to create our models was variable selection. The dataset originally had 19
+columns, however 2 were an expanded version of another column (private room and shared room were
+included in room type) and 2 more were simply the normalized versions of 2 other columns we had
+(Attraction Index and Restaurant Index). This leaves us with 14 predictor variables and one
+variable needed to predict. As the introduction mentioned, the variable we will be predicting is
+Guest Satisfaction. In order to determine which variables would be a part of our model, we used all
+subset selection on these 14 variables. The City variable has 9 subcategories, so it was broken
+into 8 dummy variables with Amsterdam being the reference variable, and the Room.Type variable has
+3 subcategories so it was broken into private room and shared room dummy variables with
+home/apartment as the reference variable, and cleanliness rating was treated as a categorical
+variable rather than continuous so that had 7 additional dummy variables with a score of 2 as the
+reference. This means there was a maximum of 29 variables that could be in the model. After running
+all subset selection and checking against with adjusted R^2 and Mallow Cp values, both returned
+that we should use a model with 21 of these 29 variables. By using the which function we found that
+5 of the 8 city dummy variables were to be included as well as 5 out of 8 cleanliness scores, so we
+decided to include the City variable and cleanliness rating in our final model. The rest of the
+variables included in the model were Price, Room.Type, Superhost, Multiple.Rooms, Business,
+Bedrooms, City.Center..km. and Attraction.Index. 
+
+  As for choosing a model to use these variables in, we wanted to be able to account for the
+independence concerns between cities while also being able to accurately predict whether or not a
+guest is satisfied. The best way we thought of to tackle the issue of independence was by using a
+mixed model for the different cities that our data is taken from. In this type of model, City would
+be treated as a grouping variable which helps us account for the variability between the different
+cities, in this case the 9 that are in the dataset. This allows the model to "borrow information"
+about the slopes between the cities. This is important because our independence assumption is
+likely violated between cities as users would likely attach how they enjoyed their trip to the
+overall satisfaction with the AirBnb which is heavily connected to the city itself. However,
+because we are creating this model for AirBnb owners who want to improve their satisfaction, we
+want to have high predictability which we cannot determine for a mixed model using our current
+statistical knowledge.
+
+  This led us to create a logistic regression model with the data, as we could easily determine if
+it had a strong predictability. For this model we used the same predictor variables, although now
+we added in 3 additional interaction terms in order to account for any effect of one variable on
+another. The three interaction terms we added in were between City * Price, City * City Center
+Distance, and City * Attraction Index. The reason we chose these interaction terms is because we
+felt these three variables are directly correlated with the city, as opposed to the other variables
+which are characteristics of the apartment itself. Prices would increase in nicer and more popular
+cities. Being closer to the city center is more important in cities with worse public transit and
+walkability. Attraction index is similar to city center as the farther away an AirBnb is from the
+city’s attractions, ex. The Eiffel Tower, the lower the value will be. Now that we have all of our
+variables used to predict guest satisfaction, we need to turn the Guest.Satisfaction variable into
+a binary outcome. We decided that a guest was satisfied with their AirBnb if they gave a score of
+90 or above, any value in this range was listed as a one and any score below this was listed as a
+0. 
+
+  We can immediately test to see if our logistic model violates our linearity assumption. We can
+use empirical logit plots to determine if the model is wrong in its predictions for any range of
+the continuous predictors in our model. The continuous predictors in this model are Price of the
+Airbnb, the distance of the Airbnb from the City Center and the AirBnb’s Attraction Index. After
+looking at the graphs for empirical logit plots between each of these predictors and our response,
+Guest.Satisfaction >= 90, it seems as though there is no particular pattern in any of the three
+plots and that the linearity assumption is satisfied. As for the independence assumption, there may
+be violations of independence on the city level.
+
+  This model seemed to be the best at addressing both independence assumption issues using
+interaction effects as well as being able to properly determine if the model we created is useful.
+
+
+#### Results
+
+The final logistic regression model can be seen below:
+```{r logistic_results, message = FALSE, warning = FALSE, echo=FALSE, results='hide'}
+
+airbnb$satisfied = ifelse(airbnb$Guest.Satisfaction >= 90, 1, 0)
+logistic_model <- glm(satisfied ~ City + Price + Room.Type + 
+                        Superhost + Multiple.Rooms + Business + 
+                        as.factor(Cleanliness.Rating) + Bedrooms + 
+                        City.Center..km. + Attraction.Index +
+                        City*Price + City*City.Center..km. + 
+                        City*Attraction.Index, 
+                      data = airbnb, family = "binomial")
+
+#tidy(logistic_model)
+summary(logistic_model)
+
+```
+satisfied ~ City + Price + Room.Type + Superhost + Multiple.Rooms + Business +
+as.factor(Cleanliness.Rating) + Bedrooms + City.Center..km. + Attraction.Index + 
+City * Price + City * City.Center..km. + City * Attraction.Index
+
+
+Below is a confusion matrix displaying our model's effectiveness at predicting
+whether guests were satisfied or not.
+
+```{r table, message = FALSE, warning = FALSE, echo=FALSE}
+
+pred_log_odds <- augment(logistic_model)
+
+pred_log_odds <- pred_log_odds %>%
+  mutate(prob = exp(.fitted)/(1 + exp(.fitted)),
+         satisfy = ifelse(prob > 0.5, "Satisfied", 
+                           "Not satisfied")) %>%
+  dplyr::select(.fitted, prob, satisfy, satisfied)
+
+table(pred_log_odds$satisfy, pred_log_odds$satisfied)
+```
+
+The specificity is 4339/(4339 + 4363) = 0.499. 
+The sensitivity is 31256/(31256 + 1756) = 0.947. 
+The positive predicted value is 31256/(31256 + 4363) = 0.878. 
+The negative predicted value is 4339/(4339 + 1756) = 0.712.
+
+
+The associated ROC curve for this model can be seen below. This ROC curve has an
+area under curve of 0.882.
+```{r roc, message = FALSE, warning = FALSE, echo=FALSE, results='hide'}
+pred_log_odds %>% roc_curve(
+  truth = as.factor(satisfied),
+  prob,
+  event_level = "second"
+) %>%
+  autoplot()
+
+pred_log_odds %>% 
+  roc_auc(
+    truth = as.factor(satisfied),
+    prob, 
+    event_level = "second"
+  )
+
+```
+
+  The model's high sensitivity rate indicates that our model is good at predicting Airbnb
+properties with high guest satisfaction as such. The positive predicted value of 0.878 means that
+we are correct 87.8% of the time when predicting high guest satisfaction. Combined with the ROC
+curve with AUC = 0.882, we are confident in our model's ability to predict successful Airbnb
+listings. This achieves our main goal for this project: predicting whether Airbnb listings will be
+successful in terms of guest satisfaction. If a prospective Airbnb owner wished to predict the
+guest satisfaction at a potential listing, he/she could feel confident using our model to predict
+this.
+
+  On the other hand, the specificity and negative predicted value are both relatively low. This
+indicates that the model is not great at predicting which Airbnbs will not satisfy guests. Since we
+are trying to predict which properties will make guests satisfied, though, this downside of our
+model is not as relevant.
+
+  In terms of which statistically significant (the ones we are confident are not 0 at a
+significance level of 0.05) slope coefficients seem to be having the biggest effect in terms of
+predicting guest satisfaction, there are a few that stand out: Price, SuperhostTrue,
+Room.TypeShared room, Multiple.Rooms, Business.
+
+  Price has a coefficient of 1.344e-3, meaning that the odds of a guest being satisfied is
+predicted to be multiplied by 1.001 with each 1 Euro increase in price of a 2 night stay for 2
+people with everything else held constant. While this seems small, it the odds of a guest being
+satisfied is predicted to be multiplied by 1.477 with a 300 Euro increase in this price. 
+
+  Similarly, the odds of a guest being satisfied is predicted to be multiplied by 8.14 if the host
+is a superhost compared to not being one, 0.61 if the host has 2-4 listings compared to one
+listing, 0.344 if the host has 4+ listings compared to one listing, and 1.92 if the room type is a
+shared room compared to "Entire home/apt" with everything else held constant. 
+
+
+MOVE THE BELOW TO DISCUSSION
+This means that a potential host interested in achieving guest satisfaction may 
+want to emulate the behavior of a superhost rather than businesses, and purchase 
+properties with shared rooms rather than entire homes or apartments.
+
+
+### Appendix
+
+# Logistic Model
+```{r logistic, message = FALSE, warning = FALSE}
+
+airbnb$satisfied = ifelse(airbnb$Guest.Satisfaction >= 90, 1, 0)
+logistic_model <- glm(satisfied ~ City + Price + Room.Type + 
+                        Superhost + Multiple.Rooms + Business + 
+                        as.factor(Cleanliness.Rating) + Bedrooms + 
+                        City.Center..km. + Attraction.Index +
+                        City*Price + City*City.Center..km. + 
+                        City*Attraction.Index, 
+                      data = airbnb, family = "binomial")
+
+#tidy(logistic_model)
+summary(logistic_model)
+
+```
